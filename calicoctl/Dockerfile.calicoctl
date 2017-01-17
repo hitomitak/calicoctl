@@ -1,4 +1,4 @@
-FROM alpine:3.4
+FROM ppc64le/ubuntu:16.04
 MAINTAINER Tom Denham <tom@projectcalico.org>
 
 ADD dist/calicoctl ./calicoctl
@@ -6,6 +6,6 @@ ADD dist/calicoctl ./calicoctl
 ENV CALICO_CTL_CONTAINER=TRUE
 
 # libltdl.so is needed by docker command line tool
-RUN apk add --no-cache libltdl
+# RUN apk add --no-cache libltdl
 
 ENTRYPOINT ["./calicoctl"]

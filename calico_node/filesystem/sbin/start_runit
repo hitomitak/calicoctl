@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # From https://github.com/faisyl/alpine-runit
 env > /etc/envvars
 
@@ -11,6 +11,6 @@ then
 fi
 
 # Source any additional environment that was added by the startup script
-. startup.env
+. /startup.env
 
-exec /sbin/runsvdir -P /etc/service/enabled
+exec runsvdir -P /etc/service/enabled

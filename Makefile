@@ -7,7 +7,7 @@ all: dist/calicoctl dist/calicoctl-darwin-amd64 dist/calicoctl-windows-amd64.exe
 
 # Determine which OS / ARCH.
 OS := $(shell uname -s | tr A-Z a-z)
-ARCH := amd64
+ARCH := ppc64le
 
 # curl should failed on 404
 CURL=curl -sSf
@@ -20,16 +20,16 @@ SOURCE_DIR:=$(abspath $(SOURCE_DIR))
 ###############################################################################
 # URL for Calico binaries
 # confd binary
-CONFD_URL?=https://github.com/projectcalico/confd/releases/download/v0.10.0-scale/confd.static
+CONFD_URL?=https://github.com/hitomitak/confd/releases/download/v0.12.0-alpha3-ppc64le/confd
 # bird binaries
-BIRD_URL?=https://github.com/projectcalico/calico-bird/releases/download/v0.2.0/bird
-BIRD6_URL?=https://github.com/projectcalico/calico-bird/releases/download/v0.2.0/bird6
-BIRDCL_URL?=https://github.com/projectcalico/calico-bird/releases/download/v0.2.0/birdcl
-CALICO_BGP_DAEMON_URL?=https://github.com/projectcalico/calico-bgp-daemon/releases/download/v0.1.1/calico-bgp-daemon
-GOBGP_URL?=https://github.com/projectcalico/calico-bgp-daemon/releases/download/v0.1.1/gobgp
+BIRD_URL?=https://github.com/hitomitak/bird/releases/download/v0.2.0-ppc64le/bird
+BIRD6_URL?=https://github.com/hitomitak/bird/releases/download/v0.2.0-ppc64le/bird6
+BIRDCL_URL?=https://github.com/hitomitak/bird/releases/download/v0.2.0-ppc64le/birdcl
+CALICO_BGP_DAEMON_URL?=https://github.com/hitomitak/calico-bgp-daemon/releases/download/v0.1.1-ppc64le/calico-bgp-daemon
+GOBGP_URL?=https://github.com/hitomitak/calico-bgp-daemon/releases/download/v0.1.1-ppc64le/gobgp
 
 # we can use "custom" build image and test image name
-PYTHON_BUILD_CONTAINER_NAME?=calico/build:v0.19.0
+PYTHON_BUILD_CONTAINER_NAME?=hitomitak/build-ppc64le
 SYSTEMTEST_CONTAINER?=calico/test
 
 # calicoctl and calico/node current share a single version - this is it.
@@ -41,13 +41,13 @@ CALICOCONTAINERS_VERSION?=$(shell git describe --tags --dirty --always)
 # - Build the container itself
 ###############################################################################
 NODE_CONTAINER_DIR=calico_node
-NODE_CONTAINER_NAME?=calico/node
+NODE_CONTAINER_NAME?=hitomitak/calico_node_ppc64le
 NODE_CONTAINER_FILES=$(shell find $(NODE_CONTAINER_DIR)/filesystem -type f)
 NODE_CONTAINER_CREATED=$(NODE_CONTAINER_DIR)/.calico_node.created
 NODE_CONTAINER_BIN_DIR=$(NODE_CONTAINER_DIR)/filesystem/bin
 NODE_CONTAINER_BINARIES=startup startup-go allocate-ipip-addr calico-felix bird calico-bgp-daemon confd libnetwork-plugin
-FELIX_CONTAINER_NAME?=calico/felix:2.0.0
-LIBNETWORK_PLUGIN_CONTAINER_NAME?=calico/libnetwork-plugin:v1.0.0
+FELIX_CONTAINER_NAME?=hitomitak/felix-ppc64le
+LIBNETWORK_PLUGIN_CONTAINER_NAME?=hitomitak/libnetwork-plugin-ppc64le
 
 calico/node: $(NODE_CONTAINER_CREATED)    ## Create the calico/node image
 
@@ -353,7 +353,7 @@ LDFLAGS=-ldflags "-X github.com/projectcalico/calicoctl/calicoctl/commands.VERSI
 	-X github.com/projectcalico/calicoctl/calicoctl/commands.BUILD_DATE=$(CALICOCTL_BUILD_DATE) \
 	-X github.com/projectcalico/calicoctl/calicoctl/commands.GIT_REVISION=$(CALICOCTL_GIT_REVISION) -s -w"
 
-GLIDE_CONTAINER_NAME?=dockerepo/glide
+GLIDE_CONTAINER_NAME?=glide-ppc64le
 TEST_CALICOCTL_CONTAINER_NAME=calico/calicoctl_test_container
 TEST_CALICOCTL_CONTAINER_MARKER=calicoctl_test_container.created
 
@@ -363,6 +363,9 @@ calico/ctl: $(CTL_CONTAINER_CREATED)      ## Create the calico/ctl image
 
 ## Use this to populate the vendor directory after checking out the repository.
 ## To update upstream dependencies, delete the glide.lock file first.
+glide-image: 
+	docker build -t glide-ppc64le - < calicoctl/Dockerfile.glide
+
 vendor: glide.lock
 	# To build without Docker just run "glide install -strip-vendor"
 	if [ "$(LIBCALICOGO_PATH)" != "none" ]; then \
@@ -393,7 +396,7 @@ dist/startup-go: $(CALICOCTL_FILES) vendor
 	docker run --rm \
 	  -v ${PWD}:/go/src/github.com/projectcalico/calicoctl:ro \
 	  -v ${PWD}/dist:/go/src/github.com/projectcalico/calicoctl/dist \
-	  golang:1.7 bash -c '\
+	  ppc64le/golang:1.7.3 bash -c '\
 	    cd /go/src/github.com/projectcalico/calicoctl && \
 	    make startup-go && \
 	    chown -R $(shell id -u):$(shell id -u) dist'
@@ -403,11 +406,11 @@ binary: $(CALICOCTL_FILES) vendor
 	GOOS=$(OS) GOARCH=$(ARCH) CGO_ENABLED=0 go build -v -o dist/calicoctl-$(OS)-$(ARCH) $(LDFLAGS) "./calicoctl/calicoctl.go"
 
 dist/calicoctl: $(CALICOCTL_FILES) vendor
-	$(MAKE) dist/calicoctl-linux-amd64 
-	mv dist/calicoctl-linux-amd64 dist/calicoctl
+	$(MAKE) dist/calicoctl-linux-ppc64le
+	mv dist/calicoctl-linux-ppc64le dist/calicoctl
 
-dist/calicoctl-linux-amd64: $(CALICOCTL_FILES) vendor
-	$(MAKE) OS=linux ARCH=amd64 binary-containerized
+dist/calicoctl-linux-ppc64le: $(CALICOCTL_FILES) vendor
+	$(MAKE) OS=linux ARCH=ppc64le binary-containerized
 
 dist/calicoctl-darwin-amd64: $(CALICOCTL_FILES) vendor
 	$(MAKE) OS=darwin ARCH=amd64 binary-containerized
@@ -425,7 +428,7 @@ binary-containerized: $(CALICOCTL_FILES) vendor
 	  -e CALICOCTL_BUILD_DATE=$(CALICOCTL_BUILD_DATE) -e CALICOCTL_GIT_REVISION=$(CALICOCTL_GIT_REVISION) \
 	  -v ${PWD}:/go/src/github.com/projectcalico/calicoctl:ro \
 	  -v ${PWD}/dist:/go/src/github.com/projectcalico/calicoctl/dist \
-	  golang:1.7 bash -c '\
+	  ppc64le/golang:1.7.3 bash -c '\
 	    cd /go/src/github.com/projectcalico/calicoctl && \
 	    make OS=$(OS) ARCH=$(ARCH) \
 	         CALICOCONTAINERS_VERSION=$(CALICOCONTAINERS_VERSION) CALICOCTL_NODE_VERSION=$(CALICOCTL_NODE_VERSION) \
