@@ -1,0 +1,5 @@
+FROM ppc64le/golang:1.7.3
+RUN apt-get install -y git
+RUN go get github.com/Masterminds/glide
+ENTRYPOINT ["glide"]
+CMD ["-v"]
