@@ -1,274 +1,12 @@
-.PHONY: all binary calico/node test ut st st-ssl clean run-etcd run-etcd-ssl help
+.PHONY: all binary calico/node test clean help
 default: help
-all: test                                 ## Run all the tests
-test: st test-containerized               ## Run all the tests
-ssl-certs: certs/.certificates.created    ## Generate self-signed SSL certificates
-all: dist/calicoctl dist/calicoctl-darwin-amd64 dist/calicoctl-windows-amd64.exe test-containerized
+all: test                                               ## Run all the tests
+test: st test-containerized node-test-containerized     ## Run all the tests
+all: dist/calicoctl dist/calicoctl-darwin-amd64 dist/calicoctl-windows-amd64.exe test-containerized node-test-containerized
 
-# Determine which OS / ARCH.
-OS := $(shell uname -s | tr A-Z a-z)
-ARCH := ppc64le
+# Include the build file for calico/node (This also pulls in Makefile.calicoctl)
+include Makefile.calico-node
 
-# curl should failed on 404
-CURL=curl -sSf
-###############################################################################
-# Common build variables
-# Path to the sources.
-# Default value: directory with Makefile
-SOURCE_DIR?=$(dir $(lastword $(MAKEFILE_LIST)))
-SOURCE_DIR:=$(abspath $(SOURCE_DIR))
-###############################################################################
-# URL for Calico binaries
-# confd binary
-CONFD_URL?=https://github.com/hitomitak/confd/releases/download/v0.12.0-alpha3-ppc64le/confd
-# bird binaries
-BIRD_URL?=https://github.com/hitomitak/bird/releases/download/v0.3.0-ppc64le/bird
-BIRD6_URL?=https://github.com/hitomitak/bird/releases/download/v0.3.0-ppc64le/bird6
-BIRDCL_URL?=https://github.com/hitomitak/bird/releases/download/v0.3.0-ppc64le/birdcl
-CALICO_BGP_DAEMON_URL?=https://github.com/hitomitak/calico-bgp-daemon/releases/download/v0.2.0/calico-bgp-daemon
-GOBGP_URL?=https://github.com/hitomitak/calico-bgp-daemon/releases/download/v0.2.0/gobgp
-
-# we can use "custom" build image and test image name
-PYTHON_BUILD_CONTAINER_NAME?=hitomitak/build-ppc64le
-SYSTEMTEST_CONTAINER?=calico/test
-
-# calicoctl and calico/node current share a single version - this is it.
-CALICOCONTAINERS_VERSION?=$(shell git describe --tags --dirty --always)
-
-###############################################################################
-# calico/node build. Contains the following areas
-# - Populate the calico_node/filesystem
-# - Build the container itself
-###############################################################################
-NODE_CONTAINER_DIR=calico_node
-NODE_CONTAINER_NAME?=hitomitak/calico_node_ppc64le
-NODE_CONTAINER_FILES=$(shell find $(NODE_CONTAINER_DIR)/filesystem -type f)
-NODE_CONTAINER_CREATED=$(NODE_CONTAINER_DIR)/.calico_node.created
-NODE_CONTAINER_BIN_DIR=$(NODE_CONTAINER_DIR)/filesystem/bin
-NODE_CONTAINER_BINARIES=startup allocate-ipip-addr calico-felix bird calico-bgp-daemon confd libnetwork-plugin
-FELIX_CONTAINER_NAME?=hitomitak/felix-ppc64le
-LIBNETWORK_PLUGIN_CONTAINER_NAME?=hitomitak/libnetwork-plugin-ppc64le
-
-STARTUP_DIR=$(NODE_CONTAINER_DIR)/startup
-STARTUP_FILES=$(shell find $(STARTUP_DIR) -name '*.go')
-ALLOCATE_IPIP_DIR=$(NODE_CONTAINER_DIR)/allocateipip
-ALLOCATE_IPIP_FILES=$(shell find $(ALLOCATE_IPIP_DIR) -name '*.go')
-
-calico/node: $(NODE_CONTAINER_CREATED)    ## Create the calico/node image
-
-calico-node.tar: $(NODE_CONTAINER_CREATED)
-	docker save --output $@ $(NODE_CONTAINER_NAME)
-
-# Build ACI (the APPC image file format) of calico/node.
-# Requires docker2aci installed on host: https://github.com/appc/docker2aci
-calico-node-latest.aci: calico-node.tar
-	docker2aci $<
-
-# Build calico/node docker image - explicitly depend on the container binaries.
-$(NODE_CONTAINER_CREATED): $(NODE_CONTAINER_DIR)/Dockerfile $(NODE_CONTAINER_FILES) $(addprefix $(NODE_CONTAINER_BIN_DIR)/,$(NODE_CONTAINER_BINARIES))
-	docker build -t $(NODE_CONTAINER_NAME) $(NODE_CONTAINER_DIR)
-	touch $@
-
-# Get felix binaries
-.PHONY: update-felix
-$(NODE_CONTAINER_BIN_DIR)/calico-felix update-felix:
-	-docker rm -f calico-felix
-	# Latest felix binaries are stored in automated builds of calico/felix.
-	# To get them, we create (but don't start) a container from that image.
-	docker create --name calico-felix $(FELIX_CONTAINER_NAME)
-	# Then we copy the files out of the container.  Since docker preserves
-	# mtimes on its copy, check the file really did appear, then touch it
-	# to make sure that downstream targets get rebuilt.
-	docker cp calico-felix:/code/. $(NODE_CONTAINER_BIN_DIR) && \
-	  test -e $(NODE_CONTAINER_BIN_DIR)/calico-felix && \
-	  touch $(NODE_CONTAINER_BIN_DIR)/calico-felix
-	-docker rm -f calico-felix
-
-# Get libnetwork-plugin binaries
-$(NODE_CONTAINER_BIN_DIR)/libnetwork-plugin:
-	-docker rm -f calico-$(@F)
-	# Latest libnetwork-plugin binaries are stored in automated builds of calico/libnetwork-plugin.
-	# To get them, we pull that image, then copy the binaries out to our host
-	docker create --name calico-$(@F) $(LIBNETWORK_PLUGIN_CONTAINER_NAME)
-	docker cp calico-$(@F):/$(@F) $(@D)
-	-docker rm -f calico-$(@F)
-
-# Get the confd binary
-$(NODE_CONTAINER_BIN_DIR)/confd:
-	$(CURL) -L $(CONFD_URL) -o $@
-	chmod +x $@
-
-# Get the calico-bgp-daemon binary
-$(NODE_CONTAINER_BIN_DIR)/calico-bgp-daemon:
-	$(CURL) -L $(GOBGP_URL) -o $(@D)/gobgp
-	$(CURL) -L $(CALICO_BGP_DAEMON_URL) -o $@
-	chmod +x $(@D)/*
-
-# Get bird binaries
-$(NODE_CONTAINER_BIN_DIR)/bird:
-	# This make target actually downloads the bird6 and birdcl binaries too
-	# Copy patched BIRD daemon with tunnel support.
-	$(CURL) -L $(BIRD6_URL) -o $(@D)/bird6
-	$(CURL) -L $(BIRDCL_URL) -o $(@D)/birdcl
-	$(CURL) -L $(BIRD_URL) -o $@
-	chmod +x $(@D)/*
-
-$(NODE_CONTAINER_BIN_DIR)/startup: dist/startup
-	mkdir -p $(NODE_CONTAINER_BIN_DIR)
-	cp dist/startup $(NODE_CONTAINER_BIN_DIR)/startup
-
-$(NODE_CONTAINER_BIN_DIR)/allocate-ipip-addr: dist/allocate-ipip-addr
-	mkdir -p $(NODE_CONTAINER_BIN_DIR)
-	cp dist/allocate-ipip-addr $(NODE_CONTAINER_BIN_DIR)/allocate-ipip-addr
-
-###############################################################################
-# Tests
-# - Support for running etcd (both securely and insecurely)
-# - Running UTs and STs
-###############################################################################
-# These variables can be overridden by setting an environment variable.
-LOCAL_IP_ENV?=$(shell ip route get 8.8.8.8 | head -1 | awk '{print $$7}')
-ST_TO_RUN?=tests/st/
-UT_TO_RUN?=tests/unit/
-
-# Can exclude the slower tests with "-a '!slow'"
-ST_OPTIONS?=
-HOST_CHECKOUT_DIR?=$(shell pwd)
-
-## Generate the keys and certificates for running etcd with SSL.
-certs/.certificates.created:
-	mkdir -p certs
-	$(CURL) -L "https://github.com/projectcalico/cfssl/releases/download/1.2.1/cfssl" -o certs/cfssl
-	$(CURL) -L "https://github.com/projectcalico/cfssl/releases/download/1.2.1/cfssljson" -o certs/cfssljson
-	chmod a+x certs/cfssl
-	chmod a+x certs/cfssljson
-
-	certs/cfssl gencert -initca tests/st/ssl-config/ca-csr.json | certs/cfssljson -bare certs/ca
-	certs/cfssl gencert \
-	  -ca certs/ca.pem \
-	  -ca-key certs/ca-key.pem \
-	  -config tests/st/ssl-config/ca-config.json \
-	  tests/st/ssl-config/req-csr.json | certs/cfssljson -bare certs/client
-	certs/cfssl gencert \
-	  -ca certs/ca.pem \
-	  -ca-key certs/ca-key.pem \
-	  -config tests/st/ssl-config/ca-config.json \
-	  tests/st/ssl-config/req-csr.json | certs/cfssljson -bare certs/server
-
-	touch certs/.certificates.created
-
-busybox.tar:
-	docker pull busybox:latest
-	docker save --output busybox.tar busybox:latest
-
-routereflector.tar:
-	docker pull calico/routereflector:latest
-	docker save --output routereflector.tar calico/routereflector:latest
-
-workload.tar:
-	cd workload && docker build -t workload .
-	docker save --output workload.tar workload
-
-## Run etcd in a container. Used by the STs and generally useful.
-run-etcd-st:
-	$(MAKE) stop-etcd
-	docker run --detach \
-	--net=host \
-	--name calico-etcd quay.io/coreos/etcd \
-	etcd \
-	--advertise-client-urls "http://$(LOCAL_IP_ENV):2379" \
-	--listen-client-urls "http://$(LOCAL_IP_ENV):2379,http://127.0.0.1:2379"
-
-stop-etcd:
-	@-docker rm -f calico-etcd calico-etcd-ssl
-
-## Run etcd in a container with SSL verification. Used primarily by STs.
-run-etcd-ssl: certs/.certificates.created add-ssl-hostname
-	$(MAKE) stop-etcd
-	docker run --detach \
-	--net=host \
-	-v $(SOURCE_DIR)/certs:/etc/calico/certs \
-	--name calico-etcd-ssl quay.io/coreos/etcd \
-	etcd \
-	--cert-file "/etc/calico/certs/server.pem" \
-	--key-file "/etc/calico/certs/server-key.pem" \
-	--trusted-ca-file "/etc/calico/certs/ca.pem" \
-	--advertise-client-urls "https://etcd-authority-ssl:2379,https://localhost:2379" \
-	--listen-client-urls "https://0.0.0.0:2379"
-
-IPT_ALLOW_ETCD:=-A INPUT -i docker0 -p tcp --dport 2379 -m comment --comment "calico-st-allow-etcd" -j ACCEPT
-
-.PHONY: st-checks
-st-checks:
-	# Check that we're running as root.
-	test `id -u` -eq '0' || { echo "STs must be run as root to allow writes to /proc"; false; }
-
-	# Insert an iptables rule to allow access from our test containers to etcd
-	# running on the host.
-	iptables-save | grep -q 'calico-st-allow-etcd' || iptables $(IPT_ALLOW_ETCD)
-
-## Run the STs in a container
-.PHONY: st
-st: dist/calicoctl busybox.tar routereflector.tar calico-node.tar workload.tar run-etcd-st
-	# Use the host, PID and network namespaces from the host.
-	# Privileged is needed since 'calico node' write to /proc (to enable ip_forwarding)
-	# Map the docker socket in so docker can be used from inside the container
-	# HOST_CHECKOUT_DIR is used for volume mounts on containers started by this one.
-	# All of code under test is mounted into the container.
-	#   - This also provides access to calicoctl and the docker client
-	# $(MAKE) st-checks
-	docker run --uts=host \
-	           --pid=host \
-	           --net=host \
-	           --privileged \
-	           -e HOST_CHECKOUT_DIR=$(HOST_CHECKOUT_DIR) \
-	           -e DEBUG_FAILURES=$(DEBUG_FAILURES) \
-	           -e MY_IP=$(LOCAL_IP_ENV) \
-	           --rm -ti \
-	           -v /var/run/docker.sock:/var/run/docker.sock \
-	           -v $(SOURCE_DIR):/code \
-	           $(SYSTEMTEST_CONTAINER) \
-	           sh -c 'cp -ra tests/st/* /tests/st && cd / && nosetests $(ST_TO_RUN) -sv --nologcapture --with-timer $(ST_OPTIONS)'
-	$(MAKE) stop-etcd
-
-## Run the STs in a container using etcd with SSL certificate/key/CA verification.
-.PHONY: st-ssl
-st-ssl: run-etcd-ssl dist/calicoctl busybox.tar calico-node.tar routereflector.tar
-	# Use the host, PID and network namespaces from the host.
-	# Privileged is needed since 'calico node' write to /proc (to enable ip_forwarding)
-	# Map the docker socket in so docker can be used from inside the container
-	# HOST_CHECKOUT_DIR is used for volume mounts on containers started by this one.
-	# All of code under test is mounted into the container.
-	#   - This also provides access to calicoctl and the docker client
-	# Mount the full path to the etcd certs directory.
-	#   - docker copies this directory directly from the host, but the
-	#     calicoctl node command reads the files from the test container
-	$(MAKE) st-checks
-	docker run --uts=host \
-	           --pid=host \
-	           --net=host \
-	           --privileged \
-	           -e HOST_CHECKOUT_DIR=$(HOST_CHECKOUT_DIR) \
-	           -e DEBUG_FAILURES=$(DEBUG_FAILURES) \
-	           -e MY_IP=$(LOCAL_IP_ENV) \
-	           -e ETCD_SCHEME=https \
-	           -e ETCD_CA_CERT_FILE=$(SOURCE_DIR)/certs/ca.pem \
-	           -e ETCD_CERT_FILE=$(SOURCE_DIR)/certs/client.pem \
-	           -e ETCD_KEY_FILE=$(SOURCE_DIR)/certs/client-key.pem \
-	           --rm -ti \
-	           -v /var/run/docker.sock:/var/run/docker.sock \
-	           -v $(SOURCE_DIR):/code \
-	           -v $(SOURCE_DIR)/certs:$(SOURCE_DIR)/certs \
-	           $(SYSTEMTEST_CONTAINER) \
-	           sh -c 'cp -ra tests/st/* /tests/st && cd / && nosetests $(ST_TO_RUN) -sv --nologcapture --with-timer $(ST_OPTIONS)'
-	$(MAKE) stop-etcd
-
-.PHONY: add-ssl-hostname
-add-ssl-hostname:
-	# Set "LOCAL_IP etcd-authority-ssl" in /etc/hosts to use as a hostname for etcd with ssl
-	if ! grep -q "etcd-authority-ssl" /etc/hosts; then \
-	  echo "\n# Host used by Calico's ETCD with SSL\n$(LOCAL_IP_ENV) etcd-authority-ssl" >> /etc/hosts; \
-	fi
 
 # This depends on clean to ensure that dependent images get untagged and repulled
 .PHONY: semaphore
@@ -278,6 +16,7 @@ semaphore: clean
 
 	# Run the containerized UTs first.
 	$(MAKE) test-containerized
+	$(MAKE) node-test-containerized
 
 	# Actually run the tests (refreshing the images as required), we only run a
 	# small subset of the tests for testing SSL support.  These tests are run
@@ -315,7 +54,6 @@ semaphore: clean
 		docker tag $(CTL_CONTAINER_NAME) $(CTL_CONTAINER_NAME):$(CALICOCONTAINERS_VERSION) && \
 		docker push $(CTL_CONTAINER_NAME):$(CALICOCONTAINERS_VERSION); \
 	fi
-
 
 ###############################################################################
 # calicoctl UTs
@@ -511,11 +249,17 @@ static-checks: vendor
 install:
 	CGO_ENABLED=0 go install github.com/projectcalico/calicoctl/calicoctl
 
+=======
+>>>>>>> f0a54318e8776b413b8caf0543c17c61605d6a82
 release: clean
 ifndef VERSION
 	$(error VERSION is undefined - run using make release VERSION=vX.Y.Z)
 endif
 	git tag $(VERSION)
+
+	# Check to make sure the tag isn't "-dirty".
+	if git describe --tags --dirty | grep dirty; \
+	then echo current git working tree is "dirty". Make sure you do not have any uncommitted changes ;false; fi
 
 	# Build the calicoctl binaries, as well as the calico/ctl and calico/node images.
 	CALICOCTL_NODE_VERSION=$(VERSION) $(MAKE) dist/calicoctl dist/calicoctl-darwin-amd64 dist/calicoctl-windows-amd64.exe 
@@ -524,7 +268,12 @@ endif
 	# Check that the version output includes the version specified.
 	# Tests that the "git tag" makes it into the binaries. Main point is to catch "-dirty" builds
 	# Release is currently supported on darwin / linux only.
-	if ! docker run $(CTL_CONTAINER_NAME) version | grep 'Version:\s*$(VERSION)$$'; then echo "Reported version:" `docker run $(CTL_CONTAINER_NAME) version` "\nExpected version: $(VERSION)"; false; else echo "Version check passed\n"; fi
+	if ! docker run $(CTL_CONTAINER_NAME) version | grep 'Version:\s*$(VERSION)$$'; then \
+	  echo "Reported version:" `docker run $(CTL_CONTAINER_NAME) version` "\nExpected version: $(VERSION)"; \
+	  false; \
+	else \
+	  echo "Version check passed\n"; \
+	fi
 
 	# Retag images with corect version and quay
 	docker tag $(NODE_CONTAINER_NAME) $(NODE_CONTAINER_NAME):$(VERSION)
@@ -544,7 +293,19 @@ endif
 	docker run $(NODE_CONTAINER_NAME) calico-felix --version
 	docker run $(NODE_CONTAINER_NAME) libnetwork-plugin -v
 
-	@echo "\nNow push the tag and images. Then create a release on Github and attach the dist/calicoctl binary"
+	@echo "\nNow push the tag and images. Then create a release on Github and"
+	@echo "attach dist/calicoctl, dist/calicoctl-darwin-amd64, and dist/calicoctl-windows-amd64.exe binaries"
+	@echo "\nAdd release notes for calicoctl and calico/node. Use this command"
+	@echo "to find commit messages for this release: git log --oneline <old_release_version>...$(VERSION)"
+	@echo "\nRelease notes for sub-components can be found at"
+	@echo "https://github.com/projectcalico/<component_name>/releases/tag/<version>"
+	@echo "\nAdd release notes from the following sub-component version releases:"
+	@echo "\nfelix:$(FELIX_VER)"
+	@echo "\nlibnetwork-plugin:$(LIBNETWORK_PLUGIN_VER)"
+	@echo "\nlibcalico-go:$(LIBCALICOGO_VER)"
+	@echo "\ncalico-bgp-daemon:$(GOBGPD_VER)"
+	@echo "\ncalico-bird:$(BIRD_VER)"
+	@echo "\nconfd:$(CONFD_VER)"
 	@echo "git push origin $(VERSION)"
 	@echo "docker push calico/ctl:$(VERSION)"
 	@echo "docker push quay.io/calico/ctl:$(VERSION)"
@@ -554,23 +315,21 @@ endif
 	@echo "docker push quay.io/calico/ctl:latest"
 	@echo "docker push calico/node:latest"
 	@echo "docker push quay.io/calico/node:latest"
+	@echo "See RELEASING.md for detailed instructions."
 
 ## Clean enough that a new release build will be clean
-clean:
+clean: clean-calicoctl
 	find . -name '*.created' -exec rm -f {} +
 	find . -name '*.pyc' -exec rm -f {} +
 	rm -rf dist build certs *.tar vendor $(NODE_CONTAINER_DIR)/filesystem/bin
 
 	# Delete images that we built in this repo
-	docker rmi calico/node:latest || true
-	docker rmi calico/ctl:latest || true
-	docker rmi calico/calicoctl_test_container:latest || true
+	docker rmi $(NODE_CONTAINER_NAME):latest || true
 
 	# Retag and remove external images so that they will be pulled again
 	# We avoid just deleting the image. We didn't build them here so it would be impolite to delete it.
 	docker tag $(FELIX_CONTAINER_NAME) $(FELIX_CONTAINER_NAME)-backup && docker rmi $(FELIX_CONTAINER_NAME) || true
-	docker tag $(PYTHON_BUILD_CONTAINER_NAME) $(PYTHON_BUILD_CONTAINER_NAME)-backup && docker rmi $(PYTHON_BUILD_CONTAINER_NAME) || true
-	docker tag $(SYSTEMTEST_CONTAINER):latest $(SYSTEMTEST_CONTAINER):latest-backup && docker rmi $(SYSTEMTEST_CONTAINER):latest || true
+	docker tag $(SYSTEMTEST_CONTAINER) $(SYSTEMTEST_CONTAINER)-backup && docker rmi $(SYSTEMTEST_CONTAINER) || true
 
 .PHONY: help
 ## Display this help text

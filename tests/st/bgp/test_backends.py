@@ -14,15 +14,11 @@
 from nose.plugins.attrib import attr
 
 from tests.st.test_base import TestBase
-from tests.st.utils.docker_host import DockerHost
+from tests.st.utils.docker_host import DockerHost, CLUSTER_STORE_DOCKER_OPTIONS
 from tests.st.utils.constants import (DEFAULT_IPV4_ADDR_1, DEFAULT_IPV4_ADDR_2,
                                       DEFAULT_IPV4_ADDR_3,
                                       DEFAULT_IPV4_POOL_CIDR, LARGE_AS_NUM)
-from tests.st.utils.utils import assert_network, assert_profile, \
-    assert_number_endpoints, get_profile_name, ETCD_CA, ETCD_CERT, \
-    ETCD_KEY, ETCD_HOSTNAME_SSL, ETCD_SCHEME, get_ip, check_bird_status
-
-from .peer import ADDITIONAL_DOCKER_OPTIONS
+from tests.st.utils.utils import check_bird_status
 
 class TestBGPBackends(TestBase):
 
@@ -35,13 +31,13 @@ class TestBGPBackends(TestBase):
         backends and a single BIRD backend.
         """
         with DockerHost('host1',
-                        additional_docker_options=ADDITIONAL_DOCKER_OPTIONS,
+                        additional_docker_options=CLUSTER_STORE_DOCKER_OPTIONS,
                         start_calico=False) as host1, \
              DockerHost('host2',
-                        additional_docker_options=ADDITIONAL_DOCKER_OPTIONS,
+                        additional_docker_options=CLUSTER_STORE_DOCKER_OPTIONS,
                         start_calico=False) as host2, \
              DockerHost('host3',
-                        additional_docker_options=ADDITIONAL_DOCKER_OPTIONS,
+                        additional_docker_options=CLUSTER_STORE_DOCKER_OPTIONS,
                         start_calico=True) as host3:
 
             # Set the default AS number.
@@ -54,10 +50,10 @@ class TestBGPBackends(TestBase):
             host2.start_calico_node("--backend=gobgp --as=%s" % LARGE_AS_NUM)
 
             # Create a network and a couple of workloads on each host.
-            network1 = host1.create_network("subnet1")
-            workload_host1 = host1.create_workload("workload1", network=network1)
-            workload_host2 = host2.create_workload("workload2", network=network1)
-            workload_host3 = host3.create_workload("workload3", network=network1)
+            network1 = host1.create_network("subnet1", subnet=DEFAULT_IPV4_POOL_CIDR)
+            workload_host1 = host1.create_workload("workload1", network=network1, ip=DEFAULT_IPV4_ADDR_1)
+            workload_host2 = host2.create_workload("workload2", network=network1, ip=DEFAULT_IPV4_ADDR_2)
+            workload_host3 = host3.create_workload("workload3", network=network1, ip=DEFAULT_IPV4_ADDR_3)
 
             # Allow network to converge
             self.assert_true(workload_host1.check_can_ping(workload_host2.ip, retries=10))
@@ -75,6 +71,3 @@ class TestBGPBackends(TestBase):
             for target in hosts:
                 expected = [("node-to-node mesh", h.ip, "Established") for h in hosts if h is not target]
                 check_bird_status(target, expected)
-
-            # TODO Need to test when IPs across hosts are in the same /26
-            # see https://github.com/projectcalico/calicoctl/issues/1362

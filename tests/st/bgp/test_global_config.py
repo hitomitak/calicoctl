@@ -14,15 +14,11 @@
 from nose.plugins.attrib import attr
 
 from tests.st.test_base import TestBase
-from tests.st.utils.docker_host import DockerHost
+from tests.st.utils.docker_host import DockerHost, CLUSTER_STORE_DOCKER_OPTIONS
 from tests.st.utils.constants import (DEFAULT_IPV4_ADDR_1, DEFAULT_IPV4_ADDR_2,
                                       DEFAULT_IPV4_POOL_CIDR, LARGE_AS_NUM)
 from tests.st.utils.exceptions import CommandExecError
-from tests.st.utils.utils import assert_network, assert_profile, \
-    assert_number_endpoints, get_profile_name, ETCD_CA, ETCD_CERT, \
-    ETCD_KEY, ETCD_HOSTNAME_SSL, ETCD_SCHEME, get_ip, check_bird_status
-
-from .peer import ADDITIONAL_DOCKER_OPTIONS
+from tests.st.utils.utils import check_bird_status
 
 class TestBGP(TestBase):
 
@@ -48,17 +44,17 @@ class TestBGP(TestBase):
             self.assertEquals(host.calicoctl("config get nodeToNodeMesh"), "on")
 
     @attr('slow')
-    def test_as_num(self):
+    def _test_as_num(self, backend='bird'):
         """
         Test using different AS number for the node-to-node mesh.
 
         We run a multi-host test for this as we need to set up real BGP peers.
         """
         with DockerHost('host1',
-                        additional_docker_options=ADDITIONAL_DOCKER_OPTIONS,
+                        additional_docker_options=CLUSTER_STORE_DOCKER_OPTIONS,
                         start_calico=False) as host1, \
              DockerHost('host2',
-                        additional_docker_options=ADDITIONAL_DOCKER_OPTIONS,
+                        additional_docker_options=CLUSTER_STORE_DOCKER_OPTIONS,
                         start_calico=False) as host2:
 
             # Set the default AS number.
@@ -66,8 +62,8 @@ class TestBGP(TestBase):
 
             # Start host1 using the inherited AS, and host2 using a specified
             # AS (same as default).
-            host1.start_calico_node()
-            host2.start_calico_node("--as=%s" % LARGE_AS_NUM)
+            host1.start_calico_node("--backend=%s" % backend)
+            host2.start_calico_node("--backend=%s --as=%s" % (backend, LARGE_AS_NUM))
 
             # Create a network and a couple of workloads on each host.
             network1 = host1.create_network("subnet1", subnet=DEFAULT_IPV4_POOL_CIDR)
@@ -86,3 +82,11 @@ class TestBGP(TestBase):
             # Check the BGP status on each host.
             check_bird_status(host1, [("node-to-node mesh", host2.ip, "Established")])
             check_bird_status(host2, [("node-to-node mesh", host1.ip, "Established")])
+
+    @attr('slow')
+    def test_bird_as_num(self):
+        self._test_as_num(backend='bird')
+
+    @attr('slow')
+    def test_gobgp_as_num(self):
+        self._test_as_num(backend='gobgp')

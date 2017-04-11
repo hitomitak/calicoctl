@@ -16,17 +16,16 @@ import re
 from nose.plugins.attrib import attr
 
 from tests.st.test_base import TestBase
-from tests.st.utils.docker_host import DockerHost
+from tests.st.utils.docker_host import DockerHost, CLUSTER_STORE_DOCKER_OPTIONS
 from tests.st.utils.constants import (DEFAULT_IPV4_ADDR_1, DEFAULT_IPV4_ADDR_2,
                                       DEFAULT_IPV4_POOL_CIDR, LARGE_AS_NUM)
 from tests.st.utils.utils import check_bird_status
 
-from .peer import create_bgp_peer, ADDITIONAL_DOCKER_OPTIONS
+from .peer import create_bgp_peer
 
 class TestGlobalPeers(TestBase):
 
-    @attr('slow')
-    def test_global_peers(self):
+    def _test_global_peers(self, backend='bird'):
         """
         Test global BGP peer configuration.
 
@@ -34,14 +33,14 @@ class TestGlobalPeers(TestBase):
         a set of global peers.
         """
         with DockerHost('host1',
-                        additional_docker_options=ADDITIONAL_DOCKER_OPTIONS,
+                        additional_docker_options=CLUSTER_STORE_DOCKER_OPTIONS,
                         start_calico=False) as host1, \
              DockerHost('host2',
-                        additional_docker_options=ADDITIONAL_DOCKER_OPTIONS,
+                        additional_docker_options=CLUSTER_STORE_DOCKER_OPTIONS,
                         start_calico=False) as host2:
             # Start both hosts using specific AS numbers.
-            host1.start_calico_node("--as=%s" % LARGE_AS_NUM)
-            host2.start_calico_node("--as=%s" % LARGE_AS_NUM)
+            host1.start_calico_node("--backend=%s --as=%s" % (backend, LARGE_AS_NUM))
+            host2.start_calico_node("--backend=%s --as=%s" % (backend, LARGE_AS_NUM))
 
             # Create a network and a couple of workloads on each host.
             network1 = host1.create_network("subnet1", subnet=DEFAULT_IPV4_POOL_CIDR)
@@ -71,7 +70,15 @@ class TestGlobalPeers(TestBase):
 
             # Check the BGP status on each host.  Connections from a node to
             # itself will be idle since this is invalid BGP configuration.
-            check_bird_status(host1, [("global", host1.ip, "Idle"),
+            check_bird_status(host1, [("global", host1.ip, ["Idle", "Active"]),
                                        ("global", host2.ip, "Established")])
             check_bird_status(host2, [("global", host1.ip, "Established"),
-                                       ("global", host2.ip, "Idle")])
+                                       ("global", host2.ip, ["Idle", "Active"])])
+
+    @attr('slow')
+    def test_bird_node_peers(self):
+        self._test_global_peers(backend='bird')
+
+    @attr('slow')
+    def test_gobgp_node_peers(self):
+        self._test_global_peers(backend='gobgp')

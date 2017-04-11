@@ -14,17 +14,16 @@
 from nose.plugins.attrib import attr
 
 from tests.st.test_base import TestBase
-from tests.st.utils.docker_host import DockerHost
+from tests.st.utils.docker_host import DockerHost, CLUSTER_STORE_DOCKER_OPTIONS
 from tests.st.utils.constants import (DEFAULT_IPV4_ADDR_1, DEFAULT_IPV4_ADDR_2,
                                       DEFAULT_IPV4_POOL_CIDR, LARGE_AS_NUM)
 from tests.st.utils.utils import check_bird_status
 
-from .peer import create_bgp_peer, ADDITIONAL_DOCKER_OPTIONS
+from .peer import create_bgp_peer
 
 class TestNodePeers(TestBase):
 
-    @attr('slow')
-    def test_node_peers(self):
+    def _test_node_peers(self, backend='bird'):
         """
         Test per-node BGP peer configuration.
 
@@ -32,15 +31,15 @@ class TestNodePeers(TestBase):
         a set of per node peers.
         """
         with DockerHost('host1',
-                        additional_docker_options=ADDITIONAL_DOCKER_OPTIONS,
+                        additional_docker_options=CLUSTER_STORE_DOCKER_OPTIONS,
                         start_calico=False) as host1, \
              DockerHost('host2',
-                        additional_docker_options=ADDITIONAL_DOCKER_OPTIONS,
+                        additional_docker_options=CLUSTER_STORE_DOCKER_OPTIONS,
                         start_calico=False) as host2:
 
             # Start both hosts using specific AS numbers.
-            host1.start_calico_node("--as=%s" % LARGE_AS_NUM)
-            host2.start_calico_node("--as=%s" % LARGE_AS_NUM)
+            host1.start_calico_node("--backend=%s --as=%s" % (backend, LARGE_AS_NUM))
+            host2.start_calico_node("--backend=%s --as=%s" % (backend, LARGE_AS_NUM))
 
             # Create a network and a couple of workloads on each host.
             network1 = host1.create_network("subnet1", subnet=DEFAULT_IPV4_POOL_CIDR)
@@ -72,3 +71,11 @@ class TestNodePeers(TestBase):
             # Check the BGP status on each host.
             check_bird_status(host1, [("node specific", host2.ip, "Established")])
             check_bird_status(host2, [("node specific", host1.ip, "Established")])
+
+    @attr('slow')
+    def test_bird_node_peers(self):
+        self._test_node_peers(backend='bird')
+
+    @attr('slow')
+    def test_gobgp_node_peers(self):
+        self._test_node_peers(backend='gobgp')
