@@ -8,7 +8,7 @@ SYSTEMTEST_CONTAINER?=calico/test:$(SYSTEMTEST_CONTAINER_VER)
 CALICOCONTAINERS_VERSION?=$(shell git describe --tags --dirty --always)
 ###############################################################################
 # Subcomponent versions:
-BIRD_VER := v0.3.0-ppc64le
+BIRD_VER := v0.3.0
 GOBGPD_VER := v0.2.0
 FELIX_VER := latest
 LIBNETWORK_PLUGIN_VER := latest
@@ -18,11 +18,11 @@ SYSTEMTEST_CONTAINER_VER := latest
 ###############################################################################
 # URL for Calico binaries
 # confd binary
-CONFD_URL?=https://github.com/hitomitak/confd/releases/download/$(CONFD_VER)/confd.
+CONFD_URL?=https://github.com/hitomitak/confd/releases/download/$(CONFD_VER)/confd
 # bird binaries
 BIRD_URL?=https://github.com/hitomitak/bird/releases/download/$(BIRD_VER)/bird
-BIRD6_URL?=https://github.com/hitomitako/bird/releases/download/$(BIRD_VER)/bird6
-BIRDCL_URL?=https://github.com/hitomitako/bird/releases/download/$(BIRD_VER)/birdcl
+BIRD6_URL?=https://github.com/hitomitak/bird/releases/download/$(BIRD_VER)/bird6
+BIRDCL_URL?=https://github.com/hitomitak/bird/releases/download/$(BIRD_VER)/birdcl
 CALICO_BGP_DAEMON_URL?=https://github.com/hitomitak/calico-bgp-daemon/releases/download/$(GOBGPD_VER)/calico-bgp-daemon
 GOBGP_URL?=https://github.com/hitomitak/calico-bgp-daemon/releases/download/$(GOBGPD_VER)/gobgp
 
@@ -37,8 +37,8 @@ NODE_CONTAINER_FILES=$(shell find $(NODE_CONTAINER_DIR)/filesystem -type f)
 NODE_CONTAINER_CREATED=$(NODE_CONTAINER_DIR)/.calico_node.created
 NODE_CONTAINER_BIN_DIR=$(NODE_CONTAINER_DIR)/filesystem/bin
 NODE_CONTAINER_BINARIES=startup allocate-ipip-addr calico-felix bird calico-bgp-daemon confd libnetwork-plugin
-FELIX_CONTAINER_NAME?=calico/felix:$(FELIX_VER)
-LIBNETWORK_PLUGIN_CONTAINER_NAME?=hitomitak/libnetwork-plugin:$(LIBNETWORK_PLUGIN_VER)
+FELIX_CONTAINER_NAME?=hitomitak/felix-ppc64le:$(FELIX_VER)
+LIBNETWORK_PLUGIN_CONTAINER_NAME?=hitomitak/libnetwork-plugin-ppc64le:$(LIBNETWORK_PLUGIN_VER)
 
 STARTUP_DIR=$(NODE_CONTAINER_DIR)/startup
 STARTUP_FILES=$(shell find $(STARTUP_DIR) -name '*.go')
@@ -133,7 +133,7 @@ dist/startup: $(STARTUP_FILES) vendor
 		-v $(CURDIR)/.go-pkg-cache:/go/pkg/:rw \
 	  -v $(CURDIR):/go/src/$(PACKAGE_NAME):ro \
 	  -v $(CURDIR)/dist:/go/src/$(PACKAGE_NAME)/dist \
-	  ppc64le/golang;1.7.3 bash -c '\
+	  ppc64le/golang:1.7.3 bash -c '\
 	    cd /go/src/$(PACKAGE_NAME) && \
 	    make startup'
 
@@ -149,7 +149,7 @@ dist/allocate-ipip-addr: $(ALLOCATE_IPIP_FILES) vendor
   	-v $(CURDIR)/.go-pkg-cache:/go/pkg/:rw \
   	-v $(CURDIR):/go/src/$(PACKAGE_NAME):ro \
 	  -v $(CURDIR)/dist:/go/src/$(PACKAGE_NAME)/dist \
-	  ppc64le/golang;1.7.3 bash -c '\
+	  ppc64le/golang:1.7.3 bash -c '\
 	    cd /go/src/$(PACKAGE_NAME) && \
 	    make allocate-ipip-addr'
 
