@@ -49,8 +49,6 @@ var exitFunction = os.Exit
 // -  Configuring the node resource with IP/AS information provided in the
 //    environment, or autodetected.
 // -  Creating default IP Pools for quick-start use
-// -  TODO:  Configuring IPIP tunnel with an IP address from an IP pool
-// TODO: Different auto-detection methods
 
 func main() {
 	// Determine the name for this node and ensure the environment is always
@@ -80,6 +78,9 @@ func main() {
 
 	// Check for conflicting node configuration
 	checkConflictingNodes(client, node)
+
+	// Check expected filesystem
+	ensureFilesystemAsExpected()
 
 	// Apply the updated node resource.
 	if _, err := client.Nodes().Apply(node); err != nil {
@@ -144,9 +145,9 @@ func waitForConnection(c *client.Client) {
 	message("Checking datastore connection")
 	for {
 		// Query some arbitrary configuration to see if the connection
-		// is working.  Getting a specific config is a good option, even
-		// if the config does not exist.
-		_, _, err := c.Config().GetFelixConfig("foo", "")
+		// is working.  Getting a specific Node is a good option, even
+		// if the Node does not exist.
+		_, err := c.Nodes().Get(api.NodeMetadata{Name: "foo"})
 
 		// We only care about a couple of error cases, all others would
 		// suggest the datastore is accessible.
@@ -633,6 +634,32 @@ func checkConflictingNodes(client *client.Client, node *api.Node) {
 	if errored {
 		terminate()
 	}
+}
+
+// Checks that the filesystem is as expected and fix it if possible
+func ensureFilesystemAsExpected() {
+	runDir := "/var/run/calico"
+	// Check if directory already exists
+	if _, err := os.Stat(runDir); err != nil {
+		// Create the runDir
+		if err = os.MkdirAll(runDir, os.ModeDir); err != nil {
+			fatal("Unable to create '%s'", runDir)
+			terminate()
+		}
+		warning("%s was not mounted, 'calicoctl node status' may provide incomplete status information", runDir)
+	}
+
+	logDir := "/var/log/calico"
+	// Check if directory already exists
+	if _, err := os.Stat(logDir); err != nil {
+		// Create the logDir
+		if err = os.MkdirAll(logDir, os.ModeDir); err != nil {
+			fatal("Unable to create '%s'", logDir)
+			terminate()
+		}
+		warning("%s was not mounted, 'calicoctl node diags' will not be able to collect logs", logDir)
+	}
+
 }
 
 // ensureDefaultConfig ensures all of the required default settings are
