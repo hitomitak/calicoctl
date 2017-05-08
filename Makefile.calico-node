@@ -133,7 +133,7 @@ dist/startup: $(STARTUP_FILES) vendor
 		-v $(CURDIR)/.go-pkg-cache:/go/pkg/:rw \
 	  -v $(CURDIR):/go/src/$(PACKAGE_NAME):ro \
 	  -v $(CURDIR)/dist:/go/src/$(PACKAGE_NAME)/dist \
-	  ppc64le/golang:1.7.3 bash -c '\
+	  ppc64le/golang:1.8.1 bash -c '\
 	    cd /go/src/$(PACKAGE_NAME) && \
 	    make startup'
 
@@ -149,7 +149,7 @@ dist/allocate-ipip-addr: $(ALLOCATE_IPIP_FILES) vendor
   	-v $(CURDIR)/.go-pkg-cache:/go/pkg/:rw \
   	-v $(CURDIR):/go/src/$(PACKAGE_NAME):ro \
 	  -v $(CURDIR)/dist:/go/src/$(PACKAGE_NAME)/dist \
-	  ppc64le/golang:1.7.3 bash -c '\
+	  ppc64le/golang:1.8.1 bash -c '\
 	    cd /go/src/$(PACKAGE_NAME) && \
 	    make allocate-ipip-addr'
 

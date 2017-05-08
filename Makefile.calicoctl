@@ -109,7 +109,7 @@ binary-containerized: $(CALICOCTL_FILES) vendor
 	  -v $(CURDIR)/dist:/go/src/$(PACKAGE_NAME)/dist \
     -e LOCAL_USER_ID=$(LOCAL_USER_ID) \
     -v $(CURDIR)/.go-pkg-cache:/go/pkg/:rw \
-	  ppc64le/golang:1.7.3 bash -c '\
+	  ppc64le/golang:1.8.1 bash -c '\
 	    cd /go/src/$(PACKAGE_NAME) && \
 	    make OS=$(OS) ARCH=$(ARCH) \
 	         CALICOCONTAINERS_VERSION=$(CALICOCONTAINERS_VERSION) CALICOCTL_NODE_VERSION=$(CALICOCTL_NODE_VERSION) \
